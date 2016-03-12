@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"syscall"
 
 	"github.com/Sirupsen/logrus"
 	"github.com/codegangsta/cli"
@@ -88,7 +89,7 @@ func main() {
 			logrus.SetLevel(logrus.DebugLevel)
 		}
 		if path := context.GlobalString("log"); path != "" {
-			f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+			f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND|syscall.O_DSYNC, 0666)
 			if err != nil {
 				return err
 			}
