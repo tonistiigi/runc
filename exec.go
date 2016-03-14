@@ -104,7 +104,14 @@ func execProcess(context *cli.Context) (int, error) {
 	if err != nil {
 		return -1, err
 	}
-	return runProcess(container, p, nil, context.String("console"), context.String("pid-file"), detach)
+	r := &runner{
+		shouldDestroy: false,
+		container:     container,
+		console:       context.String("console"),
+		detach:        detach,
+		pidFile:       context.String("pid-file"),
+	}
+	return r.run(p)
 }
 
 func getProcess(context *cli.Context, bundle string) (*specs.Process, error) {
