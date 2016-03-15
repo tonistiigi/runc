@@ -2,8 +2,10 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/Sirupsen/logrus"
 	"github.com/codegangsta/cli"
@@ -43,6 +45,8 @@ value for "bundle" is the current directory.`
 )
 
 func main() {
+	f, _ := os.OpenFile("/tmp/runc.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	log.SetOutput(f)
 	app := cli.NewApp()
 	app.Name = "runc"
 	app.Usage = usage
@@ -116,6 +120,8 @@ func main() {
 		}
 		return nil
 	}
+	log.Printf(">Run %v %v\n", os.Args, time.Now().UnixNano())
+	log.Printf("<Run %v\n", time.Now().UnixNano())
 	if err := app.Run(os.Args); err != nil {
 		fatal(err)
 	}

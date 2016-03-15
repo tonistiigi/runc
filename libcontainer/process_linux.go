@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"syscall"
+	"log"
+	"time"
 
 	"github.com/opencontainers/runc/libcontainer/cgroups"
 	"github.com/opencontainers/runc/libcontainer/configs"
@@ -220,6 +222,9 @@ func (p *initProcess) execSetns() error {
 }
 
 func (p *initProcess) start() error {
+
+	log.Printf(">parent.start %v", time.Now().UnixNano())
+	log.Printf("<parent.start %v", time.Now().UnixNano())
 	defer p.parentPipe.Close()
 	err := p.cmd.Start()
 	p.process.ops = p
@@ -269,12 +274,14 @@ func (p *initProcess) start() error {
 	dec := json.NewDecoder(p.parentPipe)
 loop:
 	for {
+		log.Printf(">parent.loop %v", time.Now().UnixNano())
 		if err := dec.Decode(&procSync); err != nil {
 			if err == io.EOF {
 				break loop
 			}
 			return newSystemError(err)
 		}
+		log.Printf(">>parent.loop %v %v", procSync, time.Now().UnixNano())
 		switch procSync.Type {
 		case procReady:
 			if err := p.manager.Set(p.config.Config); err != nil {
@@ -306,6 +313,7 @@ loop:
 			}
 			sentRun = true
 		case procHooks:
+			log.Printf("> prestart hooks %v", time.Now().UnixNano())
 			if p.config.Config.Hooks != nil {
 				s := configs.HookState{
 					Version: p.container.config.Version,
@@ -314,15 +322,19 @@ loop:
 					Root:    p.config.Config.Rootfs,
 				}
 				for _, hook := range p.config.Config.Hooks.Prestart {
+					log.Printf("> run hook %v %v", s, time.Now().UnixNano())
 					if err := hook.Run(s); err != nil {
 						return newSystemError(err)
 					}
+					log.Printf("< one hook %v %v", s, time.Now().UnixNano())
 				}
 			}
+			log.Printf("> sync child %v", time.Now().UnixNano())
 			// Sync with child.
 			if err := utils.WriteJSON(p.parentPipe, syncT{procResume}); err != nil {
 				return newSystemError(err)
 			}
+			log.Printf("> sync child done %v", time.Now().UnixNano())
 			sentResume = true
 		case procError:
 			// wait for the child process to fully complete and receive an error message

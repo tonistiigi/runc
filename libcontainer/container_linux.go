@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -175,6 +176,8 @@ func (c *linuxContainer) Set(config configs.Config) error {
 }
 
 func (c *linuxContainer) Start(process *Process) error {
+	log.Printf(">linuxContainer.Start %v", time.Now().UnixNano())
+	log.Printf("<linuxContainer.Start %v", time.Now().UnixNano())
 	c.m.Lock()
 	defer c.m.Unlock()
 	status, err := c.currentStatus()
@@ -186,6 +189,7 @@ func (c *linuxContainer) Start(process *Process) error {
 	if err != nil {
 		return newSystemError(err)
 	}
+
 	if err := parent.start(); err != nil {
 		// terminate the process to ensure that it properly is reaped.
 		if err := parent.terminate(); err != nil {
@@ -199,10 +203,13 @@ func (c *linuxContainer) Start(process *Process) error {
 	c.state = &runningState{
 		c: c,
 	}
+
+	log.Printf(">doinit %v", time.Now().UnixNano())
 	if doInit {
 		if err := c.updateState(parent); err != nil {
 			return err
 		}
+			log.Printf(">hooks %v", time.Now().UnixNano())
 		if c.config.Hooks != nil {
 			s := configs.HookState{
 				Version: c.config.Version,
@@ -211,12 +218,14 @@ func (c *linuxContainer) Start(process *Process) error {
 				Root:    c.config.Rootfs,
 			}
 			for _, hook := range c.config.Hooks.Poststart {
+				log.Printf(">hookstart %v", time.Now().UnixNano())
 				if err := hook.Run(s); err != nil {
 					if err := parent.terminate(); err != nil {
 						logrus.Warn(err)
 					}
 					return newSystemError(err)
 				}
+				log.Printf("<hookstart %v", time.Now().UnixNano())
 			}
 		}
 	}
@@ -996,6 +1005,8 @@ func (c *linuxContainer) criuNotifications(resp *criurpc.CriuResp, process *Proc
 }
 
 func (c *linuxContainer) updateState(process parentProcess) error {
+	log.Printf(">updateState %v\n", time.Now().UnixNano())
+	log.Printf("<updateState %v\n", time.Now().UnixNano())
 	c.initProcess = process
 	state, err := c.currentState()
 	if err != nil {

@@ -3,8 +3,10 @@
 package main
 
 import (
+	"log"
 	"os"
 	"runtime"
+	"time"
 
 	"github.com/codegangsta/cli"
 	"github.com/coreos/go-systemd/activation"
@@ -64,7 +66,7 @@ is a directory with a specification file and a root filesystem.`,
 		if os.Geteuid() != 0 {
 			fatalf("runc should be run as root")
 		}
-
+		
 		status, err := startContainer(context, spec)
 		if err != nil {
 			fatal(err)
@@ -94,6 +96,9 @@ var initCommand = cli.Command{
 }
 
 func startContainer(context *cli.Context, spec *specs.Spec) (int, error) {
+	log.Printf(">startContainer %v\n", time.Now().UnixNano())
+	log.Printf("<startContainer %v\n", time.Now().UnixNano())
+
 	id := context.Args().First()
 	if id == "" {
 		return -1, errEmptyID
