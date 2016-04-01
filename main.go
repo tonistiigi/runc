@@ -3,7 +3,10 @@ package main
 import (
 	"fmt"
 	"os"
+	"os/signal"
+	"runtime"
 	"strings"
+	"syscall"
 
 	"github.com/Sirupsen/logrus"
 	"github.com/codegangsta/cli"
@@ -41,6 +44,33 @@ are starting. The name you provide for the container instance must be unique on
 your host. Providing the bundle directory using "-b" is optional. The default
 value for "bundle" is the current directory.`
 )
+
+func init() {
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, syscall.SIGUSR1)
+	go func() {
+		for range c {
+			logrus.Errorf("sigusr: %v", DumpStacks())
+			os.Exit(1)
+		}
+	}()
+}
+
+// DumpStacks dumps the runtime stack.
+func DumpStacks() string {
+	var (
+		buf       []byte
+		stackSize int
+	)
+	bufferLen := 16384
+	for stackSize == len(buf) {
+		buf = make([]byte, bufferLen)
+		stackSize = runtime.Stack(buf, true)
+		bufferLen *= 2
+	}
+	buf = buf[:stackSize]
+	return string(buf)
+}
 
 func main() {
 	app := cli.NewApp()
