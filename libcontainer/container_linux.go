@@ -257,8 +257,17 @@ func (c *linuxContainer) commandTemplate(p *Process, childPipe *os.File) (*exec.
 	if cmd.SysProcAttr == nil {
 		cmd.SysProcAttr = &syscall.SysProcAttr{}
 	}
-	cmd.ExtraFiles = append(p.ExtraFiles, childPipe)
-	cmd.Env = append(cmd.Env, fmt.Sprintf("_LIBCONTAINER_INITPIPE=%d", stdioFdCount+len(cmd.ExtraFiles)-1))
+	dp := "/tmp/runc-debug"
+	if os.Getenv("RUNC_DEBUG_PATH") != "" {
+		dp = os.Getenv("RUNC_DEBUG_PATH")
+	}
+	f, err := os.OpenFile(filepath.Join(dp, fmt.Sprintf("%v-init.log", c.id)), os.O_CREATE|os.O_WRONLY|os.O_APPEND|os.O_SYNC, 0666)
+	if err != nil {
+		return nil, err
+	}
+	cmd.ExtraFiles = append(p.ExtraFiles, childPipe, f)
+	cmd.Env = append(cmd.Env, fmt.Sprintf("_LIBCONTAINER_INITPIPE=%d", stdioFdCount+len(cmd.ExtraFiles)-2), fmt.Sprintf("_DEBUG_PIPE=%d", stdioFdCount+len(cmd.ExtraFiles)-1))
+
 	// NOTE: when running a container with no PID namespace and the parent process spawning the container is
 	// PID1 the pdeathsig is being delivered to the container's init process by the kernel for some reason
 	// even with the parent still running.

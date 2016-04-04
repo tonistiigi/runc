@@ -65,6 +65,9 @@ command(s) that get executed on start, edit the args parameter of the spec. See
 				fatal(err)
 			}
 		}
+
+		debugStart(context.Args().First())
+
 		spec, err := loadSpec(specConfig)
 		if err != nil {
 			fatal(err)

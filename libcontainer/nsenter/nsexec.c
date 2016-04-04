@@ -17,9 +17,26 @@
 #include <sys/prctl.h>
 #include <unistd.h>
 #include <grp.h>
+#include <time.h>
 
 #include <bits/sockaddr.h>
 #include <linux/types.h>
+
+int debugpipe;
+
+
+void rlog(int fd, char *s) {
+  struct timespec tms;
+
+  /* The C11 way */
+  /* if (! timespec_get(&tms, TIME_UTC)) { */
+
+  /* POSIX.1-2008 way */
+  if (clock_gettime(CLOCK_REALTIME,&tms)) {
+      return;
+  }
+  dprintf(fd, "%d.%li %s\n", (int)tms.tv_sec, tms.tv_nsec, s);
+}
 
 // All arguments should be above the stack because it grows down
 struct clone_arg {
@@ -87,13 +104,17 @@ static int clone_parent(jmp_buf *env, int flags)
 	ca.env = env;
 	child  = clone(child_func, ca.stack_ptr, CLONE_PARENT | SIGCHLD | flags,
 		      &ca);
+    rlog(debugpipe, "< postclone");
 	// On old kernels, CLONE_PARENT cannot work with CLONE_NEWPID,
 	// unshare before clone to workaround this.
 	if (child == -1 && errno == EINVAL) {
+      rlog(debugpipe, "> unshare");
 		if (unshare(flags)) {
 			pr_perror("Unable to unshare namespaces");
 			return -1;
 		}
+
+    rlog(debugpipe, "< unshare");
 		child  = clone(child_func, ca.stack_ptr, SIGCHLD | CLONE_PARENT,
 			      &ca);
 	}
@@ -109,6 +130,27 @@ static int get_init_pipe()
 	int	pipenum = -1;
 
 	initpipe = getenv("_LIBCONTAINER_INITPIPE");
+	if (initpipe == NULL) {
+		return -1;
+	}
+
+	pipenum = atoi(initpipe);
+	snprintf(buf, sizeof(buf), "%d", pipenum);
+	if (strcmp(initpipe, buf)) {
+		pr_perror("Unable to parse _LIBCONTAINER_INITPIPE");
+		exit(1);
+	}
+
+	return pipenum;
+}
+
+static int get_debug_pipe()
+{
+	char	buf[PATH_MAX];
+	char	*initpipe;
+	int	pipenum = -1;
+
+	initpipe = getenv("_DEBUG_PIPE");
 	if (initpipe == NULL) {
 		return -1;
 	}
@@ -247,6 +289,7 @@ static void start_child(int pipenum, jmp_buf *env, int syncpipe[2],
 		exit(1);
 	}
 
+  rlog(debugpipe, "> update map");
 	// update uid_map and gid_map for the child process if they
 	// were provided
 	update_process_uidmap(childpid, config->uidmap, config->uidmap_len);
@@ -260,6 +303,7 @@ static void start_child(int pipenum, jmp_buf *env, int syncpipe[2],
 		exit(1);
 	}
 
+  rlog(debugpipe, "< syncpiped");
 	// Send the child pid back to our parent
 	len = snprintf(buf, sizeof(buf), "{ \"pid\" : %d }\n", childpid);
 	if ((len < 0) || (write(pipenum, buf, len) != len)) {
@@ -267,6 +311,7 @@ static void start_child(int pipenum, jmp_buf *env, int syncpipe[2],
 		kill(childpid, SIGKILL);
 		exit(1);
 	}
+  rlog(debugpipe, "> preexit");
 
 	exit(0);
 }
@@ -356,6 +401,12 @@ static struct nsenter_config process_nl_attributes(int pipenum, char *data, int 
 void nsexec(void)
 {
 	int pipenum;
+  
+  debugpipe = get_debug_pipe();
+	if (debugpipe == -1) {
+		return;
+	}
+  rlog(debugpipe, "init");
 
 	// If we don't have init pipe, then just return to the go routine,
 	// we'll only have init pipe for start or exec
@@ -368,10 +419,13 @@ void nsexec(void)
 	struct nlmsghdr nl_msg_hdr;
 	int		len;
 
+
+  rlog(debugpipe, "> read0");
 	if ((len = read(pipenum, &nl_msg_hdr, NLMSG_HDRLEN)) != NLMSG_HDRLEN) {
 		pr_perror("Invalid netlink header length %d", len);
 		exit(1);
 	}
+  rlog(debugpipe, "< read0");
 
 	if (nl_msg_hdr.nlmsg_type == NLMSG_ERROR) {
 		pr_perror("Failed to read netlink message");
@@ -387,16 +441,20 @@ void nsexec(void)
 	int  nl_total_size = NLMSG_PAYLOAD(&nl_msg_hdr, 0);
 	char data[nl_total_size];
 
+  rlog(debugpipe, "> read1");
 	if ((len = read(pipenum, data, nl_total_size)) != nl_total_size) {
 		pr_perror("Failed to read netlink payload, %d != %d", len,
 			  nl_total_size);
 		exit(1);
 	}
+  rlog(debugpipe, "< read1");
 
 	jmp_buf	env;
 	int	syncpipe[2] = {-1, -1};
+  rlog(debugpipe, "> process_nl_attributes");
 	struct	nsenter_config config = process_nl_attributes(pipenum,
 						data, nl_total_size);
+  rlog(debugpipe, "< process_nl_attributes");
 
 	// required clone_flags to be passed
 	if (config.cloneflags == -1) {
@@ -410,6 +468,8 @@ void nsexec(void)
 		exit(1);
 	}
 
+  rlog(debugpipe, "< postpipe");
+  
 	if (setjmp(env) == 1) {
 		// Child
 		uint8_t s = 0;
@@ -468,5 +528,7 @@ void nsexec(void)
 	}
 
 	// Parent
+
+  rlog(debugpipe, "< preclone");
 	start_child(pipenum, &env, syncpipe, &config);
 }
